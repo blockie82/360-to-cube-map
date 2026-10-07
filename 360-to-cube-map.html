@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>360 to Cube Map</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{--bg:#14171b;--panel:#1c2026;--line:#2c323a;--text:#e9e7e2;--muted:#8d95a0;--accent:#5aa2ff;--accent-ink:#071526;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 18px 48px}
+h1{font-size:clamp(24px,4.5vw,34px);line-height:1.1;font-weight:650;margin:0 0 6px}
+p.lead{margin:0 0 22px;color:var(--muted);max-width:62ch}
+#drop{display:block;border:2px dashed #3b434e;border-radius:6px;background:var(--panel);padding:34px 18px;text-align:center;cursor:pointer}
+#drop.over,#drop:focus-within,#drop:hover{border-color:var(--accent)}
+#drop input{position:absolute;opacity:0;width:1px;height:1px}
+#drop b{font-weight:600}
+.bar{display:flex;flex-wrap:wrap;gap:14px;align-items:end;margin:18px 0}
+label.f{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:4px}
+select{font:inherit;color:var(--text);background:#262c34;border:1px solid #3a424d;border-radius:6px;padding:7px 11px;cursor:pointer}
+button{font:inherit;font-weight:600;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:6px;padding:9px 16px;cursor:pointer}
+button.alt{background:#262c34;color:var(--text);border-color:#3a424d;font-weight:400}
+button.alt:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#out[hidden]{display:none}
+.hint{font-size:12px;color:var(--muted);margin:-6px 0 14px}
+.item{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:12px}
+.item h3{margin:0 0 8px;font-size:14px;font-weight:650;overflow-wrap:anywhere}
+.item .st{color:var(--muted);font-size:12px;font-weight:400}
+.thumbs{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:10px}
+.thumbs div{font-size:12px;color:var(--muted);text-align:center}
+.thumbs canvas{width:100%;height:auto;display:block;margin-bottom:2px;background:#000;border-radius:3px}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
+.acts button{padding:6px 12px;font-size:13px}
+button.alt.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.thumbs button.th{background:none;color:var(--muted);border:1px solid transparent;font-weight:400;font-size:12px;padding:2px;text-align:center;border-radius:4px}
+.thumbs button.th:hover{border-color:var(--accent)}
+#viewer{position:fixed;inset:0;z-index:10;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#viewer[hidden]{display:none}
+.vbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.vbar .sp{flex:1}
+.vbar label.f{flex-direction:row;align-items:center}
+.vstage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:12px}
+#vcan{height:100%;max-width:100%;aspect-ratio:1/1;background:#000;border-radius:3px;cursor:crosshair;touch-action:none}
+#viewer .hint{margin:0;padding:0 14px 10px}
+@media(max-width:560px){.thumbs{grid-template-columns:repeat(3,1fr)}}
+#status{color:var(--muted);font-size:13px;min-height:20px}
+</style>
+</head>
+<body>
+<main>
+<h1>360 to cube map</h1>
+<p class="lead">Drop in one or many equirectangular (2:1) 360 panoramas. Each becomes six square faces, ready to download per image or as a batch. Everything runs in your browser.</p>
+
+<label id="drop" for="file" tabindex="-1">
+<input id="file" type="file" accept="image/*" multiple>
+<b>Choose images</b> or drop them here
+</label>
+
+<div class="bar">
+<label class="f">Face size
+<select id="size"><option value="0">Auto</option><option>256</option><option>512</option><option selected>1024</option><option>2048</option><option>4096</option></select></label>
+<label class="f">Face overlap
+<select id="fov"><option value="90">None (90° faces)</option><option value="100">Small (100°)</option><option value="105">Medium (105°)</option><option value="110">Large (110°)</option><option value="120">Extra large (120°)</option></select></label>
+<label class="f">Format
+<select id="fmt"><option value="png">PNG</option><option value="jpeg">JPEG</option></select></label>
+<label class="f">Layout image
+<select id="layout"><option value="cross">Horizontal cross (4×3)</option><option value="strip">Strip (6×1)</option></select></label>
+<label class="f">Mask export
+<select id="mout"><option value="alpha">Transparent PNG (alpha)</option><option value="files">Separate mask files</option></select></label>
+<button id="clear" class="alt" disabled>Clear all</button>
+</div>
+<div id="status" role="status">No images loaded.</div>
+
+<section id="out" hidden>
+<div class="bar">
+<button id="dlInd" disabled>Download all faces – individual folders</button>
+<button id="dlOne" disabled>Download all faces – one combined folder</button>
+</div>
+<p class="hint">Individual folders: one subfolder per image. Combined folder: every face in a single folder with unique names (name_px, name_nx…), which is what Reality Capture needs.</p>
+<p class="hint">Face overlap widens each face beyond 90° so neighbouring faces share image content. This helps photogrammetry and Gaussian splatting match features across face borders. With overlap, the layout image is no longer a seamless cross, so use the individual faces for reconstruction. Each card lists the field of view and focal length to enter in your software.</p>
+<p class="hint">Click any face to view it large and paint over things to leave out, such as people, a tripod or the sky. Masked areas are removed on export: either made transparent (masked faces are saved as PNG) or written as separate black-and-white mask files named name_px_mask.png (white keeps, black is ignored). Set the overlap before masking, as changing it clears masks.</p>
+<div id="items"></div>
+<p class="lead" style="margin-top:18px">Axis convention: the middle of each panorama becomes the front face (−Z), +Y up. Face names follow the OpenGL/Three.js order: px, nx, py, ny, pz, nz.</p>
+</section>
+</main>
+
+<div id="viewer" hidden role="dialog" aria-label="Mask faces">
+<div class="vbar"><strong id="vtitle"></strong><span class="sp"></span>
+<button class="alt" id="vprev">Previous</button><button class="alt" id="vnext">Next</button><button id="vdone">Done</button></div>
+<div class="vbar">
+<button class="alt on" id="vpaint">Paint</button><button class="alt" id="verase">Erase</button><button class="alt" id="vundo">Undo</button><button class="alt" id="vclear">Clear face</button>
+<label class="f">Brush size <input type="range" id="vbrush" min="0.5" max="12" step="0.5" value="3"></label>
+</div>
+<div class="vstage"><canvas id="vcan"></canvas></div>
+<p class="hint">Paint over anything to exclude. Left and right arrow keys switch faces; Esc closes.</p>
+</div>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var NAMES=['px','nx','py','ny','pz','nz'];
+var DIR={
+ px:function(u,v){return[1,-v,u]},nx:function(u,v){return[-1,-v,-u]},
+ py:function(u,v){return[u,1,-v]},ny:function(u,v){return[u,-1,v]},
+ pz:function(u,v){return[-u,-v,1]},nz:function(u,v){return[u,-v,-1]}
+};
+var CROSS={py:[1,0],nx:[0,1],nz:[1,1],px:[2,1],pz:[3,1],ny:[1,2]};
+var items=[],used={},token=0,ext='png';
+var status=$('status');
+
+function wait(){return new Promise(function(r){setTimeout(r,0)})}
+function blobOf(c,mime){return new Promise(function(r){c.toBlob(r,mime,.95)})}
+function save(blob,name){
+ var u=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(function(){URL.revokeObjectURL(u)},4000);
+}
+function decode(file){
+ return new Promise(function(res,rej){
+  var img=new Image();
+  img.onload=function(){
+   var c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;
+   var x=c.getContext('2d',{willReadFrequently:true});x.drawImage(img,0,0);
+   URL.revokeObjectURL(img.src);
+   try{res(x.getImageData(0,0,c.width,c.height))}catch(e){rej(e)}
+  };
+  img.onerror=function(){rej(new Error('decode'))};
+  img.src=URL.createObjectURL(file);
+ });
+}
+function renderFace(src,name,n,t){
+ var c=document.createElement('canvas');c.width=c.height=n;
+ var ctx=c.getContext('2d'),o=ctx.createImageData(n,n),od=o.data;
+ var W=src.width,H=src.height,sd=src.data,f=DIR[name],TAU=Math.PI*2;
+ for(var y=0;y<n;y++){
+  var v=2*(y+.5)/n-1;
+  for(var x=0;x<n;x++){
+   var u=2*(x+.5)/n-1,d=f(u*t,v*t),len=Math.sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]);
+   var lon=Math.atan2(d[0],-d[2]),lat=Math.asin(d[1]/len);
+   var sx=(0.5+lon/TAU)*W-.5,sy=(0.5-lat/Math.PI)*H-.5;
+   var x0=Math.floor(sx),y0=Math.floor(sy),fx=sx-x0,fy=sy-y0;
+   var xa=((x0%W)+W)%W,xb=(xa+1)%W;
+   var ya=Math.min(H-1,Math.max(0,y0)),yb=Math.min(H-1,Math.max(0,y0+1));
+   var a=(ya*W+xa)*4,b=(ya*W+xb)*4,cc=(yb*W+xa)*4,dd=(yb*W+xb)*4,k=(y*n+x)*4;
+   for(var ch=0;ch<4;ch++)od[k+ch]=(sd[a+ch]*(1-fx)+sd[b+ch]*fx)*(1-fy)+(sd[cc+ch]*(1-fx)+sd[dd+ch]*fx)*fy;
+  }
+ }
+ ctx.putImageData(o,0,0);return c;
+}
+
+function uniqueName(file){
+ var base=(file.name.replace(/\.[^.]+$/,'')||'panorama').replace(/[^\w\-.]+/g,'_'),n=base,i=2;
+ while(used[n])n=base+'-'+(i++);
+ used[n]=1;return n;
+}
+function showList(on){$('out').hidden=!on}
+function addFiles(list){
+ var fs=Array.prototype.filter.call(list,function(f){return f.type.indexOf('image/')===0});
+ if(!fs.length){status.textContent='No image files found. Choose JPG, PNG or WebP files.';return}
+ fs.forEach(function(f){
+  var card=document.createElement('div');card.className='item';
+  $('items').appendChild(card);
+  items.push({file:f,name:uniqueName(f),card:card,blobs:null,n:0,masks:{}});
+ });
+ showList(true);$('clear').disabled=false;
+ run();
+}
+
+function paintCard(it,stText){
+ it.stText=stText;var c=it.card;c.innerHTML='';
+ var h=document.createElement('h3');h.textContent=it.name+' ';
+ var s=document.createElement('span');s.className='st';s.textContent=stText;h.appendChild(s);c.appendChild(h);
+ if(!it.blobs)return;
+ var t=document.createElement('div');t.className='thumbs';
+ NAMES.forEach(function(nm){
+  var d=document.createElement('button'),cv=document.createElement('canvas');
+  d.className='th';d.title='View and mask '+nm;d.onclick=function(){openViewer(it,nm)};
+  cv.width=cv.height=96;d.appendChild(cv);
+  d.appendChild(document.createTextNode(nm+(it.masks[nm]&&it.masks[nm].length?' · masked':'')));t.appendChild(d);
+  createImageBitmap(it.blobs[nm]).then(function(bm){cv.getContext('2d').drawImage(bm,0,0,96,96);bm.close&&bm.close()});
+ });
+ c.appendChild(t);
+ var a=document.createElement('div');a.className='acts';
+ var b1=document.createElement('button');b1.textContent='Download faces (.zip)';
+ b1.onclick=function(){zipSave([it],false,it.name+'_faces.zip')};
+ var b2=document.createElement('button');b2.textContent='Download layout image';
+ b2.onclick=function(){layoutSave(it,b2)};
+ a.appendChild(b1);a.appendChild(b2);c.appendChild(a);
+}
+
+async function run(){
+ var my=++token;$('viewer').hidden=true;
+ var sel=+$('size').value,fmt=$('fmt').value,mime='image/'+fmt;
+ ext=fmt==='jpeg'?'jpg':'png';
+ setBusy(true);
+ var ok=0,fov=+$('fov').value,t=Math.tan(fov*Math.PI/360);
+ for(var i=0;i<items.length;i++){items[i].blobs=null;paintCard(items[i],'Waiting…')}
+ for(var i=0;i<items.length;i++){
+  if(my!==token)return;
+  var it=items[i];
+  status.textContent='Converting '+(i+1)+' of '+items.length+': '+it.name+'…';
+  paintCard(it,'Converting…');await wait();
+  try{
+   var src=await decode(it.file);
+   var n=sel||Math.max(64,Math.min(4096,Math.floor(src.width/4)));
+   var blobs={};
+   for(var k=0;k<NAMES.length;k++){
+    var cv=renderFace(src,NAMES[k],n,t);
+    blobs[NAMES[k]]=await blobOf(cv,mime);cv.width=cv.height=0;
+    await wait();
+   }
+   it.blobs=blobs;it.n=n;ok++;var foc=Math.round(n/2/t);
+   var ratio=src.width/src.height;
+   paintCard(it,n+'×'+n+' px per face · '+fov+'° field of view · focal length '+foc+' px'+(Math.abs(ratio-2)>0.05?' · source is not 2:1, faces may look stretched':''));
+  }catch(e){
+   paintCard(it,'Could not read this image');
+  }
+ }
+ if(my!==token)return;
+ setBusy(false);
+ status.textContent='Done: '+ok+' of '+items.length+' image'+(items.length===1?'':'s')+' converted.';
+}
+function setBusy(b){
+ var any=items.some(function(i){return i.blobs});
+ $('dlInd').disabled=b||!any;$('dlOne').disabled=b||!any;
+}
+
+async function layoutSave(it,btn){
+ var layout=$('layout').value,n=it.n,cols=layout==='cross'?4:6,rows=layout==='cross'?3:1;
+ if(cols*n>16384||cols*n*rows*n>150e6){status.textContent='A layout image at '+n+' px per face is too large for the browser. Use a smaller face size, or download the individual faces.';return}
+ btn.disabled=true;
+ var cv=document.createElement('canvas');cv.width=cols*n;cv.height=rows*n;
+ var cx=cv.getContext('2d');
+ if(ext==='jpg'){cx.fillStyle='#000';cx.fillRect(0,0,cv.width,cv.height)}
+ for(var i=0;i<NAMES.length;i++){
+  var p=layout==='cross'?CROSS[NAMES[i]]:[i,0],bm=await createImageBitmap(it.blobs[NAMES[i]]);
+  cx.drawImage(bm,p[0]*n,p[1]*n);bm.close&&bm.close();
+ }
+ var b=await blobOf(cv,ext==='jpg'?'image/jpeg':'image/png');
+ cv.width=cv.height=0;save(b,it.name+'_'+layout+'.'+ext);btn.disabled=false;
+}
+
+function drawStroke(ctx,st,s){
+ ctx.globalCompositeOperation=st.t==='erase'?'destination-out':'source-over';
+ ctx.strokeStyle='#fff';ctx.lineWidth=st.size*s;ctx.lineCap=ctx.lineJoin='round';ctx.beginPath();
+ var p=st.pts;ctx.moveTo(p[0][0]*s,p[0][1]*s);
+ if(p.length===1)ctx.lineTo(p[0][0]*s+.01,p[0][1]*s);
+ for(var i=1;i<p.length;i++)ctx.lineTo(p[i][0]*s,p[i][1]*s);
+ ctx.stroke();ctx.globalCompositeOperation='source-over';
+}
+function maskCanvas(strokes,n){
+ var m=document.createElement('canvas');m.width=m.height=n;var c=m.getContext('2d');
+ strokes.forEach(function(st){drawStroke(c,st,n)});return m;
+}
+// Files for one image, applying any masks
+async function buildFiles(it){
+ var files={},alpha=$('mout').value==='alpha';
+ for(var k=0;k<NAMES.length;k++){
+  var nm=NAMES[k],st=it.masks[nm]||[],base=it.name+'_'+nm;
+  if(!st.length){files[base+'.'+ext]=it.blobs[nm];continue}
+  var bm=await createImageBitmap(it.blobs[nm]),n=bm.width,m=maskCanvas(st,n);
+  var c=document.createElement('canvas');c.width=c.height=n;var x=c.getContext('2d');
+  if(alpha){
+   x.drawImage(bm,0,0);x.globalCompositeOperation='destination-out';x.drawImage(m,0,0);
+   files[base+'.png']=await blobOf(c,'image/png');
+  }else{
+   files[base+'.'+ext]=it.blobs[nm];
+   x.fillStyle='#fff';x.fillRect(0,0,n,n);
+   var t=document.createElement('canvas');t.width=t.height=n;var tc=t.getContext('2d');
+   tc.drawImage(m,0,0);tc.globalCompositeOperation='source-in';tc.fillStyle='#000';tc.fillRect(0,0,n,n);
+   x.drawImage(t,0,0);files[base+'_mask.png']=await blobOf(c,'image/png');
+  }
+  bm.close&&bm.close();c.width=c.height=0;
+ }
+ return files;
+}
+async function zipSave(list,combined,zipName){
+ if(typeof JSZip==='undefined'){status.textContent='The ZIP library could not load. Check your connection and reload the page.';return}
+ status.textContent='Building ZIP…';
+ try{
+  var z=new JSZip(),root=combined?z.folder('cubemap_faces'):null;
+  for(var i=0;i<list.length;i++){
+   if(!list[i].blobs)continue;
+   var dir=combined?root:z.folder(list[i].name),files=await buildFiles(list[i]);
+   Object.keys(files).forEach(function(f){dir.file(f,files[f])});
+  }
+  var b=await z.generateAsync({type:'blob',compression:'STORE'});
+  save(b,zipName);status.textContent='Downloaded '+zipName;
+ }catch(e){status.textContent='Could not build the ZIP. Try fewer or smaller images.'}
+}
+
+// Face viewer and mask painter
+var vw={list:[],i:0,tool:'paint',cur:null,bm:null,m:document.createElement('canvas'),strokes:[]};
+var V=$('vcan');
+async function openViewer(it,nm){
+ vw.list=[];items.forEach(function(x){if(x.blobs)NAMES.forEach(function(n){vw.list.push([x,n])})});
+ vw.i=vw.list.findIndex(function(p){return p[0]===it&&p[1]===nm});
+ await showFace();$('viewer').hidden=false;
+}
+async function showFace(){
+ var p=vw.list[vw.i],it=p[0],nm=p[1];
+ var bm=await createImageBitmap(it.blobs[nm]);vw.bm=bm;
+ var s=Math.min(bm.width,1024);V.width=V.height=s;vw.m.width=vw.m.height=s;
+ vw.strokes=it.masks[nm]=it.masks[nm]||[];vw.cur=null;
+ $('vtitle').textContent=it.name+' · '+nm+' ('+(vw.i+1)+' of '+vw.list.length+')';
+ redraw();
+}
+function redraw(){
+ var s=V.width,c=V.getContext('2d'),mc=vw.m.getContext('2d');
+ c.clearRect(0,0,s,s);c.drawImage(vw.bm,0,0,s,s);
+ mc.clearRect(0,0,s,s);
+ vw.strokes.concat(vw.cur?[vw.cur]:[]).forEach(function(st){drawStroke(mc,st,s)});
+ var t=document.createElement('canvas');t.width=t.height=s;var tc=t.getContext('2d');
+ tc.drawImage(vw.m,0,0);tc.globalCompositeOperation='source-in';tc.fillStyle='rgba(255,50,70,.55)';tc.fillRect(0,0,s,s);
+ c.drawImage(t,0,0);
+}
+function vpos(e){var r=V.getBoundingClientRect();return[(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height]}
+V.addEventListener('pointerdown',function(e){V.setPointerCapture(e.pointerId);vw.cur={t:vw.tool,size:parseFloat($('vbrush').value)/100,pts:[vpos(e)]};redraw()});
+V.addEventListener('pointermove',function(e){if(vw.cur){vw.cur.pts.push(vpos(e));redraw()}});
+function vend(){if(vw.cur){vw.strokes.push(vw.cur);vw.cur=null;redraw()}}
+V.addEventListener('pointerup',vend);V.addEventListener('pointercancel',vend);
+function vtool(t){vw.tool=t;$('vpaint').classList.toggle('on',t==='paint');$('verase').classList.toggle('on',t==='erase')}
+$('vpaint').onclick=function(){vtool('paint')};$('verase').onclick=function(){vtool('erase')};
+$('vundo').onclick=function(){vw.strokes.pop();redraw()};
+$('vclear').onclick=function(){vw.strokes.length=0;redraw()};
+async function vstep(d){vw.i=(vw.i+d+vw.list.length)%vw.list.length;await showFace()}
+$('vprev').onclick=function(){vstep(-1)};$('vnext').onclick=function(){vstep(1)};
+function vclose(){$('viewer').hidden=true;items.forEach(function(it){if(it.blobs)paintCard(it,it.stText)})}
+$('vdone').onclick=vclose;
+addEventListener('keydown',function(e){
+ if($('viewer').hidden)return;
+ if(e.key==='Escape')vclose();
+ else if(e.key==='ArrowLeft')vstep(-1);else if(e.key==='ArrowRight')vstep(1);
+ else if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();$('vundo').click()}
+});
+var lastFov=$('fov').value;
+$('fov').addEventListener('change',function(){
+ var has=items.some(function(it){return Object.keys(it.masks).some(function(k){return it.masks[k].length})});
+ if(has&&!confirm('Changing the overlap changes what each face shows, so existing masks would no longer line up. Clear all masks and continue?')){$('fov').value=lastFov;return}
+ if(has)items.forEach(function(it){it.masks={}});
+ lastFov=$('fov').value;if(items.length)run();
+});
+
+$('dlInd').onclick=function(){zipSave(items,false,'cubemap_faces_individual_folders.zip')};
+$('dlOne').onclick=function(){zipSave(items,true,'cubemap_faces_combined_folder.zip')};
+$('clear').onclick=function(){
+ token++;items=[];used={};$('items').innerHTML='';showList(false);$('clear').disabled=true;
+ $('dlInd').disabled=$('dlOne').disabled=true;$('file').value='';status.textContent='No images loaded.';
+};
+$('file').addEventListener('change',function(){addFiles($('file').files);$('file').value=''});
+['size','fmt'].forEach(function(id){$(id).addEventListener('change',function(){if(items.length)run()})});
+var drop=$('drop');
+['dragenter','dragover'].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.add('over')})});
+['dragleave','drop'].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.remove('over')})});
+drop.addEventListener('drop',function(ev){addFiles(ev.dataTransfer.files)});
+})();
+</script>
+</body>
+</html>
