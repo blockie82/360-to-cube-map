@@ -31,6 +31,6 @@ The page loads [JSZip](https://stuk.github.io/jszip/) 3.10.1 from cdnjs for ZIP 
 
 Sampling is bilinear and runs on the CPU in the browser, so very large batches at 4096 px are slow and memory-heavy. Convert in smaller batches if the tab runs out of memory.
 
-## Licence
+## License
 
-MIT. See `LICENSE`.
+Released under the [MIT License](LICENSE). You're free to use, copy, modify and share this tool, but it comes with no warranty.
